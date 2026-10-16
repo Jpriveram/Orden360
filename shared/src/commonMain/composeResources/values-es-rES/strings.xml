@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<resources>
+    <string name="app_name">Orden360</string>
+    <string name="signin_button">Iniciar sesión</string>
+    <string name="signin_title">Iniciar sesión</string>
+    <string name="exchange_title">Tipo de cambio</string>
+</resources>

@@ -1,4 +1,7 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.zip.ZipInputStream
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -96,5 +99,90 @@ dependencies {
 
 room3{
     schemaDirectory("$projectDir/schemas")
+}
+
+val locoApiKey = providers.gradleProperty("LOCO_API_KEY").orElse("")
+
+tasks.register("downloadLocaliseTranslations") {
+    group = "localization"
+    description = "Descarga las traducciones desde Loco y las ubica en composeResources"
+
+    notCompatibleWithConfigurationCache("Descarga externa desde la API de Loco")
+
+    doLast {
+        val apiKey = locoApiKey.get()
+
+        if (apiKey.isBlank()) {
+            throw GradleException(
+                "Por favor, configura LOCO_API_KEY en el archivo gradle.properties de la raíz."
+            )
+        }
+
+        println("Iniciando descarga de traducciones desde Loco (localise.biz)...")
+
+        val urlString = "https://localise.biz/api/export/archive/xml.zip?key=$apiKey"
+        val connection = URL(urlString).openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+
+        val responseCode = connection.responseCode
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            val outputZip = layout.buildDirectory.file("translations.zip").get().asFile
+            val tempExtractDir = layout.buildDirectory.dir("temp_translations").get().asFile
+            val targetDir = projectDir.resolve("src/commonMain/composeResources")
+
+            connection.inputStream.use { input ->
+                outputZip.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            if (tempExtractDir.exists()) {
+                tempExtractDir.deleteRecursively()
+            }
+            tempExtractDir.mkdirs()
+
+            ZipInputStream(outputZip.inputStream()).use { zipInput ->
+                var entry = zipInput.nextEntry
+                while (entry != null) {
+                    val newFile = File(tempExtractDir, entry.name)
+                    if (entry.isDirectory) {
+                        newFile.mkdirs()
+                    } else {
+                        newFile.parentFile?.mkdirs()
+                        newFile.outputStream().use { output ->
+                            zipInput.copyTo(output)
+                        }
+                    }
+                    zipInput.closeEntry()
+                    entry = zipInput.nextEntry
+                }
+            }
+
+            val foundValuesDir = tempExtractDir.walkTopDown()
+                .find { it.isDirectory && it.name.startsWith("values") }
+                ?.parentFile
+                ?: tempExtractDir
+
+            foundValuesDir.listFiles()?.forEach { file ->
+                if (file.isDirectory && file.name.startsWith("values")) {
+                    val destination = File(targetDir, file.name)
+                    destination.deleteRecursively()
+                    file.copyRecursively(destination, overwrite = true)
+                    println("Copiado idioma: ${file.name} -> ${destination.absolutePath}")
+                }
+            }
+
+            tempExtractDir.deleteRecursively()
+            println("Traducciones organizadas con éxito en ${targetDir.absolutePath}")
+        } else {
+            val errorResponse = connection.errorStream
+                ?.bufferedReader()
+                ?.readText()
+                ?: "Error desconocido"
+            throw GradleException("Error al conectar con Loco ($responseCode): $errorResponse")
+        }
+
+        connection.disconnect()
+    }
 }
 
