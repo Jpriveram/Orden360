@@ -6,9 +6,15 @@ plugins {
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.detekt)
-    alias(libs.plugins.googleServices)
+    alias(libs.plugins.googleServices) apply false
 }
 
+// The two Android screens can run from a clean checkout without Firebase configuration.
+val hasFirebaseConfig = file("google-services.json").isFile ||
+    fileTree("src") { include("**/google-services.json") }.files.isNotEmpty()
+if (hasFirebaseConfig) {
+    apply(plugin = "com.google.gms.google-services")
+}
 
 kotlin {
     compilerOptions {
